@@ -18,6 +18,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.speech.tts.TextToSpeech;
 
 import com.google.atap.tangoservice.TangoAreaDescriptionMetaData;
 import com.google.atap.tangoservice.TangoCoordinateFramePair;
@@ -33,6 +34,7 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -69,6 +71,7 @@ import java.util.ArrayList;
 
 
 public class MainActivity extends AppCompatActivity{
+    TextToSpeech t1;
     private String TAG = "ATTN";
     private boolean usbPermission;
     private Tango mTango;
@@ -121,16 +124,31 @@ public class MainActivity extends AppCompatActivity{
         this.goButton = (Button) findViewById(R.id.go_button);
         this.testButton = (Button) findViewById(R.id.test_button);
         this.mTitleTextView = (TextView) findViewById(R.id.chome);
+
+        t1=new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if(status != TextToSpeech.ERROR) {
+                    t1.setLanguage(Locale.UK);
+                }
+            }
+        });
+
         this.theButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
                 mTitleTextView.setText("Setting target");
                 setTarget();
+                String toSpeak = "Setting target";
+                t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
             }
         });
         this.goButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
                 mTitleTextView.setText("going to target");
+                String toSpeak = "go to target";
+                t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
                 go();
+
             }
         });
         this.testButton.setOnClickListener(new View.OnClickListener() {
