@@ -20,7 +20,10 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.google.atap.tangoservice.TangoAreaDescriptionMetaData;
+import com.google.atap.tangoservice.TangoCoordinateFramePair;
+import com.google.atap.tangoservice.TangoEvent;
 import com.google.atap.tangoservice.TangoPoseData;
+import com.google.atap.tangoservice.TangoXyzIjData;
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
 import com.hoho.android.usbserial.driver.UsbSerialPort;
 import com.hoho.android.usbserial.driver.UsbSerialProber;
@@ -38,7 +41,7 @@ import com.google.atap.tangoservice.TangoConfig;
 import com.google.atap.tangoservice.TangoErrorException;
 import com.google.atap.tangoservice.TangoOutOfDateException;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity{
     private String TAG = "ATTN";
     private boolean usbPermission;
     private Tango mTango;
@@ -88,6 +91,7 @@ public class MainActivity extends AppCompatActivity {
         UsbDevice device = driver.getDevice();
         manager.requestPermission(device, mPermissionIntent);
         tryConnect();
+
     }
 
     @Override
@@ -125,6 +129,7 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     Log.v("ATTN", "No ADFs found");
                 }
+                setTangoListeners();
             }
         }
     }
@@ -161,15 +166,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void onPoseAvailable(TangoPoseData pose) {
-        if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
-                && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
-            Log.v(TAG, "new ADF to device pose data");
-        } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
-                && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE) {
-            Log.v(TAG, "new localization");
-        }
-    }
 
     public String getName(String uuid) {
 
@@ -181,6 +177,46 @@ public class MainActivity extends AppCompatActivity {
             return name;
         } // Do something if null
         return "haha fuck u";
+    }
+
+    private void setTangoListeners() {
+        // Select coordinate frame pairs
+        ArrayList<TangoCoordinateFramePair> framePairs =
+                new ArrayList<TangoCoordinateFramePair>();
+        framePairs.add(new TangoCoordinateFramePair(
+                TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE,
+                TangoPoseData.COORDINATE_FRAME_DEVICE));
+        mTango.connectListener(framePairs, new Tango.OnTangoUpdateListener() {
+
+            @Override
+            public void onPoseAvailable(TangoPoseData pose) {
+                if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
+                        && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
+                    Log.v(TAG, "new ADF to device pose data");
+                } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
+                        && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE) {
+                    Log.v(TAG, "new localization");
+                }
+                Log.v(TAG, "lol get rekt scrub");
+            }
+
+            @Override
+            public void onXyzIjAvailable(TangoXyzIjData tangoXyzIjData) {
+
+            }
+
+            @Override
+            public void onFrameAvailable(int i) {
+
+            }
+
+            @Override
+            public void onTangoEvent(TangoEvent tangoEvent) {
+
+            }
+
+        });
+        Log.v(TAG, "Successfully implemented pose listener!");
     }
 
 }
