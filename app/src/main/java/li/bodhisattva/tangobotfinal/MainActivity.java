@@ -66,28 +66,19 @@ import com.google.atap.tangoservice.TangoPoseData;
 import com.google.atap.tangoservice.TangoXyzIjData;
 
 
+import org.w3c.dom.Text;
+
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 
 
-public class MainActivity extends AppCompatActivity{
+public class MainActivity extends AppCompatActivity {
+    private static final String ACTION_USB_PERMISSION =
+            "com.android.example.USB_PERMISSION";
+    public double π = Math.PI;
     TextToSpeech t1;
     private String TAG = "ATTN";
     private boolean usbPermission;
-    private Tango mTango;
-    private TangoConfig mConfig;
-    private UsbManager manager;
-    private List<UsbSerialDriver> availableDrivers;
-    private UsbSerialDriver driver;
-    private PendingIntent mPermissionIntent;
-    private UsbDeviceConnection connection;
-    private UsbSerialPort sPort;
-    private TextView mTitleTextView;
-    private Button theButton;
-    private Button goButton;
-    private Button testButton;
-    private static final String ACTION_USB_PERMISSION =
-            "com.android.example.USB_PERMISSION";
     private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
 
         public void onReceive(Context context, Intent intent) {
@@ -107,11 +98,35 @@ public class MainActivity extends AppCompatActivity{
             }
         }
     };
+    private Tango mTango;
+    private TangoConfig mConfig;
+    private UsbManager manager;
+    private List<UsbSerialDriver> availableDrivers;
+    private UsbSerialDriver driver;
+    private PendingIntent mPermissionIntent;
+    private UsbDeviceConnection connection;
+    private UsbSerialPort sPort;
+    private TextView mTitleTextView;
+    private Button theButton;
+    private Button goButton;
+    private Button testButton;
+    private Button stop;
+    private double turnRate = (2 * π) / 4600;
+    private boolean looping;
     private boolean tangoPermissions = false;
     private boolean mIsRelocalized;
     private Object mSharedLock = new Object();
     private TangoPoseData currentPose;
     private TangoPoseData target;
+    private boolean rotating;
+    private boolean moving;
+    private Button right;
+    private TextView rotationText;
+    private TextView bearingText;
+    private TextView bearingDeltaText;
+    private TextView localizationText;
+    private TextView adfText;
+    private boolean connected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,13 +138,20 @@ public class MainActivity extends AppCompatActivity{
         this.theButton = (Button) findViewById(R.id.lomarf);
         this.goButton = (Button) findViewById(R.id.go_button);
         this.testButton = (Button) findViewById(R.id.test_button);
+        this.stop = (Button) findViewById(R.id.stop);
         this.mTitleTextView = (TextView) findViewById(R.id.chome);
+        this.right = (Button) findViewById(R.id.right_button);
+        this.rotationText = (TextView) findViewById(R.id.rotation_text);
+        this.bearingText = (TextView) findViewById(R.id.bearing_text);
+        this.bearingDeltaText = (TextView) findViewById(R.id.bearing_delta);
+        this.localizationText = (TextView) findViewById(R.id.loc_text);
+        this.adfText = (TextView) findViewById(R.id.adfText);
 
-        t1=new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
+        t1 = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
-                if(status != TextToSpeech.ERROR) {
-                    t1.setLanguage(Locale.UK);
+                if (status != TextToSpeech.ERROR) {
+                    t1.setLanguage(Locale.CHINESE);
                 }
             }
         });
@@ -154,7 +176,20 @@ public class MainActivity extends AppCompatActivity{
         this.testButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
                 mTitleTextView.setText("testing connection");
+                t1.speak("testing connection", TextToSpeech.QUEUE_FLUSH, null);
                 testConnection();
+            }
+        });
+        this.stop.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                mTitleTextView.setText("halting");
+                t1.speak("halting", TextToSpeech.QUEUE_FLUSH, null);
+                stop();
+            }
+        });
+        this.right.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View view) {
+                turn_right();
             }
         });
         mTango = new Tango(this);
@@ -170,6 +205,105 @@ public class MainActivity extends AppCompatActivity{
         manager.requestPermission(device, mPermissionIntent);
         tryConnect();
 
+        Thread rotationThread = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (currentPose != null) {
+                                    rotationText.setText(String.valueOf(quateq(currentPose)));
+                                }
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        rotationThread.start();
+
+        Thread bearingThread = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (currentPose != null && target != null) {
+                                    double bearing = bearing(currentPose, target);
+                                    bearingText.setText(String.valueOf(bearing));
+                                }
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        bearingThread.start();
+
+        Thread bearingDeltaThread = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (currentPose != null && target != null) {
+                                    double rotation = quateq(currentPose);
+                                    double bearing = bearing(currentPose, target);
+                                    double bearing_delta = bearing - rotation;
+                                    if (bearing_delta < 0) bearing_delta += 2 * π;
+                                    bearingDeltaText.setText(String.valueOf(bearing_delta));
+                                }
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        bearingDeltaThread.start();
+
+        final Thread localizationThread = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (mIsRelocalized) {
+                                    localizationText.setText("Localized");
+                                } else {
+                                    localizationText.setText("Not Localized");
+                                }
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        localizationThread.start();
+
     }
 
     private void testConnection() {
@@ -182,15 +316,98 @@ public class MainActivity extends AppCompatActivity{
         sendCommand(' ');
     }
 
+    private void stop() {
+        sendCommand(' ');
+    }
+
+    /*
+        This should give us the amount we have to turn to align with the target
+        if it doesn't work
+     */
+    private double bearing(TangoPoseData bot, TangoPoseData target) {
+        double x1 = bot.translation[0];
+        double y1 = bot.translation[1];
+
+        double x2 = target.translation[0];
+        double y2 = target.translation[1];
+
+        return Math.atan2((y2 - y1), (x2 - x1));
+        //return Math.atan2((x2-x1), (y2-y1)); //should work if the axes are... unconventional (i.e. angles are measured in terms of anti-clockwise from y)
+    }
+
+    private double distance(TangoPoseData bot, TangoPoseData target) {
+        double dx = bot.translation[0] - target.translation[0];
+        double dy = bot.translation[1] - target.translation[1];
+
+        double distance = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
+
+        return distance;
+    }
+
+
     private void go() {
+
+        double rotation = quateq(currentPose);
+        if (rotation < 0) rotation += 2 * π;
+        Log.v(TAG, "Rotation is " + rotation);
+
+        //double targetRotation = 0;
+
+        rotating = false;
+
+        double bearing = bearing(currentPose, target);
+        Log.v(TAG, "Target bearing is " + bearing);
+
+        double bearing_delta = bearing - rotation;
+        if (bearing_delta < 0) bearing_delta += 2 * π;
+        Log.v(TAG, "Bearing ∆ is " + bearing_delta);
+
+        double distance = distance(currentPose, target);
+
+        double delay = bearing_delta / turnRate;
+        //double delay = bearing_delta / turnRate;
+        Log.v(TAG, "Turn for " + delay + "ms");
+
+        if (delay >= 75) {
+            Log.v(TAG, "Angle large enough to turn");
+            sendCommand('a');
+            //sendCommand('d');
+            try {
+                Thread.sleep((long) delay);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            sendCommand(' ');
+            sendCommand(' ');
+        }
+//            if (bearing_delta > 1) {
+//
+//                rotating = true;
+//                sendCommand('a`');
+//                try {
+//                    Thread.sleep(100);
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//                sendCommand(' ');
+//            }
+
+    }
+
+    private double quateq(TangoPoseData pose) {
+        return Math.atan2(2 * (pose.rotation[3] * pose.rotation[2] + pose.rotation[0] * pose.rotation[1]), 1 - 2 * (pose.rotation[1]
+                * pose.rotation[1] + pose.rotation[2] * pose.rotation[2])) + π/2;
     }
 
     private void setTarget() {
         target = currentPose;
     }
 
+    private void turn_right() {
+        sendCommand('d');
+    }
 
-
+    //robot turns 2*π radians in ~4.5 seconds
     @Override
     protected void onResume() {
         mIsRelocalized = false;
@@ -260,7 +477,7 @@ public class MainActivity extends AppCompatActivity{
                     mConfig.putString(TangoConfig.KEY_STRING_AREADESCRIPTION,
                             fullUUIDList.get(fullUUIDList.size() - 1));
                     Log.v("ATTN", "Loaded ADF");
-                    this.mTitleTextView.setText(getName(fullUUIDList.get(fullUUIDList.size()-1)));
+                    this.adfText.setText(getName(fullUUIDList.get(fullUUIDList.size() - 1)));
                 } else {
                     Log.v("ATTN", "No ADFs found");
                 }
@@ -270,6 +487,7 @@ public class MainActivity extends AppCompatActivity{
     }
 
     private void tryConnect() {
+        Log.v(TAG, "Trying to connect");
         this.availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(this.manager);
         if (this.availableDrivers.isEmpty()) {
             return;
@@ -283,21 +501,28 @@ public class MainActivity extends AppCompatActivity{
             return;
         }
         sPort = this.driver.getPorts().get(0);
-        sendCommand('w');
-        sendCommand(' ');
+        try {
+            sPort.open(this.connection);
+            sPort.setParameters(115200, 8, 1, 0);
+            connected = true;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void sendCommand(char c) {
-        try {
-            UsbSerialPort usbSerialPort = sPort;
-            usbSerialPort.open(this.connection);
-            usbSerialPort.setParameters(115200, 8, 1, 0);
-            byte[] arrby = new byte[8];
-            arrby[0] = (byte) c;
-            usbSerialPort.write(arrby, 1000);
-            usbSerialPort.close();
-        } catch (IOException e) {
-            Log.v("OOPS", "we done fucked up :/");
+        if (connected) {
+            Log.v(TAG, "Sending command: "+c);
+            try {
+                byte[] arrby = new byte[8];
+                arrby[0] = (byte) c;
+                sPort.write(arrby, 1000);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            Log.v(TAG, "Not connected");
+            tryConnect();
         }
     }
 
@@ -332,7 +557,7 @@ public class MainActivity extends AppCompatActivity{
             @Override
             public void onPoseAvailable(TangoPoseData pose) {
 
-                boolean updateRenderer = false;
+
                 // Make sure to have atomic access to Tango Data so that
                 // UI loop doesn't interfere while Pose call back is updating
                 // the data.
@@ -344,13 +569,12 @@ public class MainActivity extends AppCompatActivity{
                             && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
 
                         if (mIsRelocalized) {
-                            updateRenderer = true;
                             currentPose = pose;
                         }
                     } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE
                             && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
                         if (!mIsRelocalized) {
-                            updateRenderer = true;
+
                         }
 
                     } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
@@ -359,14 +583,24 @@ public class MainActivity extends AppCompatActivity{
                         if (pose.statusCode == TangoPoseData.POSE_VALID) {
                             mIsRelocalized = true;
                             // Set the color to green
-                            currentPose = pose;
+
                         } else {
                             mIsRelocalized = false;
                             // Set the color blue
                         }
                     }
                 }
+                if (rotating) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    Log.v(TAG, "still rotating");
+                    go();
+                }
             }
+
             @Override
             public void onXyzIjAvailable(TangoXyzIjData tangoXyzIjData) {
 

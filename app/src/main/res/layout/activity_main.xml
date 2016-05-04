@@ -40,4 +40,62 @@
         android:layout_below="@+id/lomarf"
         android:layout_alignStart="@+id/lomarf"
         android:layout_alignEnd="@+id/lomarf" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="STOP"
+        android:id="@+id/stop"
+        android:layout_alignParentStart="true"
+        android:layout_alignBottom="@+id/test_button"
+        android:layout_alignTop="@+id/go_button"
+        android:layout_toStartOf="@+id/lomarf" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Turn Right"
+        android:id="@+id/right_button"
+        android:layout_above="@+id/test_button"
+        android:layout_alignParentEnd="true" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="rotation"
+        android:id="@+id/rotation_text"
+        android:layout_below="@+id/chome"
+        android:layout_toStartOf="@+id/go_button" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="bearing"
+        android:id="@+id/bearing_text"
+        android:layout_below="@+id/rotation_text"
+        android:layout_alignStart="@+id/rotation_text" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="localization"
+        android:id="@+id/loc_text"
+        android:layout_below="@+id/bearing_delta"
+        android:layout_alignStart="@+id/bearing_delta" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ADF"
+        android:id="@+id/adfText"
+        android:layout_alignTop="@+id/rotation_text"
+        android:layout_alignParentStart="true" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="bearing_delta"
+        android:id="@+id/bearing_delta"
+        android:layout_below="@+id/bearing_text"
+        android:layout_alignStart="@+id/bearing_text" />
 </RelativeLayout>
