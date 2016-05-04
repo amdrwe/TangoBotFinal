@@ -127,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView localizationText;
     private TextView adfText;
     private boolean connected = false;
+    private boolean arrived = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -151,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onInit(int status) {
                 if (status != TextToSpeech.ERROR) {
-                    t1.setLanguage(Locale.CHINESE);
+                    t1.setLanguage(Locale.FRANCE);
                 }
             }
         });
@@ -216,7 +217,9 @@ public class MainActivity extends AppCompatActivity {
                             @Override
                             public void run() {
                                 if (currentPose != null) {
-                                    rotationText.setText(String.valueOf(quateq(currentPose)));
+                                    double rotation = quateq(currentPose);
+                                    if (rotation < 0) rotation += 2 * π;
+                                    rotationText.setText(String.valueOf(rotation));
                                 }
                             }
                         });
@@ -240,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
                             public void run() {
                                 if (currentPose != null && target != null) {
                                     double bearing = bearing(currentPose, target);
+                                    if (bearing < 0) bearing += 2*π;
                                     bearingText.setText(String.valueOf(bearing));
                                 }
                             }
@@ -264,7 +268,9 @@ public class MainActivity extends AppCompatActivity {
                             public void run() {
                                 if (currentPose != null && target != null) {
                                     double rotation = quateq(currentPose);
+                                    if (rotation < 0) rotation += 2 * π;
                                     double bearing = bearing(currentPose, target);
+                                    if (bearing < 0) bearing += 2*π;
                                     double bearing_delta = bearing - rotation;
                                     if (bearing_delta < 0) bearing_delta += 2 * π;
                                     bearingDeltaText.setText(String.valueOf(bearing_delta));
@@ -354,8 +360,10 @@ public class MainActivity extends AppCompatActivity {
         //double targetRotation = 0;
 
         rotating = false;
+        moving = false;
 
         double bearing = bearing(currentPose, target);
+        if (bearing < 0) bearing += 2*π;
         Log.v(TAG, "Target bearing is " + bearing);
 
         double bearing_delta = bearing - rotation;
@@ -364,43 +372,65 @@ public class MainActivity extends AppCompatActivity {
 
         double distance = distance(currentPose, target);
 
-        double delay = bearing_delta / turnRate;
-        //double delay = bearing_delta / turnRate;
+        double delay = Math.abs(bearing_delta / turnRate);
+
         Log.v(TAG, "Turn for " + delay + "ms");
 
+//        if (delay >= 75) {
+//            Log.v(TAG, "Angle large enough to turn");
+//            sendCommand('a');
+//            //sendCommand('d');
+//            try {
+//                Thread.sleep((long) delay);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
+//            sendCommand(' ');
+//            sendCommand(' ');
+//        }
         if (delay >= 75) {
             Log.v(TAG, "Angle large enough to turn");
-            sendCommand('a');
-            //sendCommand('d');
+            rotating = true;
+            if (bearing_delta < π) {
+                sendCommand('d');
+            } else {
+                sendCommand('a');
+            }
             try {
-                Thread.sleep((long) delay);
+                Thread.sleep((long)delay/3);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
             sendCommand(' ');
+        }
+
+        if (distance > 0.1 && !rotating) {
+            Log.v(TAG, "Still far");
+            moving = true;
+            sendCommand('w');
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             sendCommand(' ');
         }
-//            if (bearing_delta > 1) {
-//
-//                rotating = true;
-//                sendCommand('a`');
-//                try {
-//                    Thread.sleep(100);
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-//                sendCommand(' ');
-//            }
-
+        if (distance <= 0.1 && !arrived) {
+            arrived = true;
+            t1.speak("Engaging target", TextToSpeech.QUEUE_FLUSH, null);
+            rotating = false;
+            moving = false;
+        }
     }
 
     private double quateq(TangoPoseData pose) {
         return Math.atan2(2 * (pose.rotation[3] * pose.rotation[2] + pose.rotation[0] * pose.rotation[1]), 1 - 2 * (pose.rotation[1]
-                * pose.rotation[1] + pose.rotation[2] * pose.rotation[2])) + π/2;
+                * pose.rotation[1] + pose.rotation[2] * pose.rotation[2])) + π / 2;
     }
 
     private void setTarget() {
         target = currentPose;
+        arrived = false;
     }
 
     private void turn_right() {
@@ -512,7 +542,7 @@ public class MainActivity extends AppCompatActivity {
 
     public void sendCommand(char c) {
         if (connected) {
-            Log.v(TAG, "Sending command: "+c);
+            Log.v(TAG, "Sending command: " + c);
             try {
                 byte[] arrby = new byte[8];
                 arrby[0] = (byte) c;
@@ -556,8 +586,6 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPoseAvailable(TangoPoseData pose) {
-
-
                 // Make sure to have atomic access to Tango Data so that
                 // UI loop doesn't interfere while Pose call back is updating
                 // the data.
@@ -571,34 +599,23 @@ public class MainActivity extends AppCompatActivity {
                         if (mIsRelocalized) {
                             currentPose = pose;
                         }
-                    } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_START_OF_SERVICE
-                            && pose.targetFrame == TangoPoseData.COORDINATE_FRAME_DEVICE) {
-                        if (!mIsRelocalized) {
-
-                        }
-
                     } else if (pose.baseFrame == TangoPoseData.COORDINATE_FRAME_AREA_DESCRIPTION
                             && pose.targetFrame == TangoPoseData
                             .COORDINATE_FRAME_START_OF_SERVICE) {
                         if (pose.statusCode == TangoPoseData.POSE_VALID) {
                             mIsRelocalized = true;
                             // Set the color to green
-
                         } else {
                             mIsRelocalized = false;
                             // Set the color blue
                         }
                     }
                 }
-                if (rotating) {
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                    Log.v(TAG, "still rotating");
+                if (rotating || moving) {
+                    //Log.v(TAG, "still moving");
                     go();
                 }
+
             }
 
             @Override
