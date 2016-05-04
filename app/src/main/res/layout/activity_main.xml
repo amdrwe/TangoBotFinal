@@ -98,4 +98,20 @@
         android:id="@+id/bearing_delta"
         android:layout_below="@+id/bearing_text"
         android:layout_alignStart="@+id/bearing_text" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="IP"
+        android:id="@+id/ipaddress"
+        android:layout_below="@+id/test_button"
+        android:layout_alignStart="@+id/loc_text" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="distance"
+        android:id="@+id/distance"
+        android:layout_below="@+id/ipaddress"
+        android:layout_alignStart="@+id/ipaddress" />
 </RelativeLayout>

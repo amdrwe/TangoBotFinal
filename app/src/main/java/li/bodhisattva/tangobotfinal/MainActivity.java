@@ -32,7 +32,12 @@ import com.hoho.android.usbserial.util.HexDump;
 import com.hoho.android.usbserial.util.SerialInputOutputManager;
 
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -65,6 +70,11 @@ import com.google.atap.tangoservice.TangoOutOfDateException;
 import com.google.atap.tangoservice.TangoPoseData;
 import com.google.atap.tangoservice.TangoXyzIjData;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.ServerSocket;
+import java.net.Socket;
 
 import org.w3c.dom.Text;
 
@@ -73,6 +83,11 @@ import java.util.ArrayList;
 
 
 public class MainActivity extends AppCompatActivity {
+    private ServerSocket serverSocket;
+    Thread serverThread = null;
+    private String ip;
+    public static final int SERVERPORT = 6000;
+
     private static final String ACTION_USB_PERMISSION =
             "com.android.example.USB_PERMISSION";
     public double π = Math.PI;
@@ -126,8 +141,12 @@ public class MainActivity extends AppCompatActivity {
     private TextView bearingDeltaText;
     private TextView localizationText;
     private TextView adfText;
+    private TextView ipText;
+    private TextView distanceText;
     private boolean connected = false;
     private boolean arrived = false;
+    private String messageOut = "";
+    private boolean started;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -147,12 +166,14 @@ public class MainActivity extends AppCompatActivity {
         this.bearingDeltaText = (TextView) findViewById(R.id.bearing_delta);
         this.localizationText = (TextView) findViewById(R.id.loc_text);
         this.adfText = (TextView) findViewById(R.id.adfText);
+        this.ipText = (TextView) findViewById(R.id.ipaddress);
+        this.distanceText = (TextView) findViewById(R.id.distance);
 
         t1 = new TextToSpeech(getApplicationContext(), new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {
                 if (status != TextToSpeech.ERROR) {
-                    t1.setLanguage(Locale.FRANCE);
+                    t1.setLanguage(Locale.US);
                 }
             }
         });
@@ -161,15 +182,12 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 mTitleTextView.setText("Setting target");
                 setTarget();
-                String toSpeak = "Setting target";
-                t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
+
             }
         });
         this.goButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View view) {
                 mTitleTextView.setText("going to target");
-                String toSpeak = "go to target";
-                t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
                 go();
 
             }
@@ -243,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
                             public void run() {
                                 if (currentPose != null && target != null) {
                                     double bearing = bearing(currentPose, target);
-                                    if (bearing < 0) bearing += 2*π;
+                                    if (bearing < 0) bearing += 2 * π;
                                     bearingText.setText(String.valueOf(bearing));
                                 }
                             }
@@ -270,7 +288,7 @@ public class MainActivity extends AppCompatActivity {
                                     double rotation = quateq(currentPose);
                                     if (rotation < 0) rotation += 2 * π;
                                     double bearing = bearing(currentPose, target);
-                                    if (bearing < 0) bearing += 2*π;
+                                    if (bearing < 0) bearing += 2 * π;
                                     double bearing_delta = bearing - rotation;
                                     if (bearing_delta < 0) bearing_delta += 2 * π;
                                     bearingDeltaText.setText(String.valueOf(bearing_delta));
@@ -310,6 +328,33 @@ public class MainActivity extends AppCompatActivity {
 
         localizationThread.start();
 
+        final Thread distanceThread = new Thread() {
+
+            @Override
+            public void run() {
+                try {
+                    while (!isInterrupted()) {
+                        Thread.sleep(1000);
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (currentPose != null && target != null) {
+                                    distanceText.setText(String.valueOf(distance(currentPose, target)));
+                                }
+                            }
+                        });
+                    }
+                } catch (InterruptedException e) {
+                }
+            }
+        };
+
+        distanceThread.start();
+
+        ip = getIpAddress();
+        this.serverThread = new Thread(new ServerThread());
+        this.serverThread.start();
+        ipText.setText(ip);
     }
 
     private void testConnection() {
@@ -352,7 +397,12 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void go() {
-
+        if (!started){
+            started = true;
+            String toSpeak = "go to target";
+            //String toSpeak = "IF THE ZOO BANS ME FOR HOLLERING AT THE ANIMALS I WILL FACE GOD AND WALK BACKWARDS INTO HELL";
+            t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
+        }
         double rotation = quateq(currentPose);
         if (rotation < 0) rotation += 2 * π;
         Log.v(TAG, "Rotation is " + rotation);
@@ -363,7 +413,7 @@ public class MainActivity extends AppCompatActivity {
         moving = false;
 
         double bearing = bearing(currentPose, target);
-        if (bearing < 0) bearing += 2*π;
+        if (bearing < 0) bearing += 2 * π;
         Log.v(TAG, "Target bearing is " + bearing);
 
         double bearing_delta = bearing - rotation;
@@ -397,7 +447,7 @@ public class MainActivity extends AppCompatActivity {
                 sendCommand('a');
             }
             try {
-                Thread.sleep((long)delay/3);
+                Thread.sleep((long) delay / 3);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -429,8 +479,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setTarget() {
+        String toSpeak = "Setting target";
+        t1.speak(toSpeak, TextToSpeech.QUEUE_FLUSH, null);
         target = currentPose;
         arrived = false;
+        started = false;
     }
 
     private void turn_right() {
@@ -636,5 +689,113 @@ public class MainActivity extends AppCompatActivity {
         });
         Log.v(TAG, "Successfully implemented pose listener!");
     }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    class ServerThread implements Runnable {
+
+        public void run() {
+            Log.v(TAG, "Server Thread Started");
+            Socket socket = null;
+            try {
+                serverSocket = new ServerSocket(SERVERPORT);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            while (!Thread.currentThread().isInterrupted()) {
+
+                try {
+                    //Log.v(TAG, "waiting for client");
+                    socket = serverSocket.accept();
+                    Log.v(TAG, "accepted client socket");
+                    CommunicationThread commThread = new CommunicationThread(socket);
+                    new Thread(commThread).start();
+
+                } catch (IOException e) {
+                   // e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    class CommunicationThread implements Runnable {
+
+        private Socket clientSocket;
+
+        private BufferedReader input;
+
+        public CommunicationThread(Socket clientSocket) {
+            Log.v(TAG, "attempting to set up communications");
+            this.clientSocket = clientSocket;
+
+            try {
+
+                this.input = new BufferedReader(new InputStreamReader(this.clientSocket.getInputStream()));
+                Log.v(TAG, "Input ok");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        public void run() {
+
+            while (!Thread.currentThread().isInterrupted()) {
+
+                try {
+
+                    String read = input.readLine();
+                    char first = read.charAt(0);
+                    switch (first){
+                        case 116:
+                            setTarget();
+                            break;
+                        case 103:
+                            go();
+                            break;
+                        default:
+                            sendCommand(first);
+                            break;
+                    }
+
+                } catch (IOException e) {
+
+                    e.printStackTrace();
+                }
+            }
+        }
+
+    }
+
+
+    public static String getIpAddress() {
+        String ipAddress = "Unable to Fetch IP..";
+        try {
+            Enumeration en;
+            en = NetworkInterface.getNetworkInterfaces();
+            while (en.hasMoreElements()) {
+                NetworkInterface intf = (NetworkInterface) en.nextElement();
+                for (Enumeration enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements(); ) {
+                    InetAddress inetAddress = (InetAddress) enumIpAddr.nextElement();
+                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
+                        ipAddress = inetAddress.getHostAddress().toString();
+                        return ipAddress;
+                    }
+                }
+            }
+        } catch (SocketException ex) {
+            ex.printStackTrace();
+        }
+        return ipAddress;
+    }
+
 
 }
